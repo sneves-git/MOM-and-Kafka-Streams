@@ -9,11 +9,14 @@ import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Grouped;
+import org.apache.kafka.streams.kstream.JoinWindows;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.KeyValueMapper;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.TimeWindows;
+import org.apache.kafka.streams.kstream.ValueJoiner;
 import org.json.JSONObject;
 
 public class KafkaStreams_ {
@@ -45,9 +48,10 @@ public class KafkaStreams_ {
                 .peek((key, value) -> System.out.println("[lines_weather_alerts] key: " + key + " value: " + value));
         // Exercicios
         // 1. Count temperature readings of standard weather events per weather station.
-        lines_standard_weather.groupByKey()
-                .count()
-                .toStream()
+        KTable<String, Long> countTemperaturePerWs = lines_standard_weather.groupByKey()
+                .count();
+
+        countTemperaturePerWs.toStream()
                 .peek((key, value) -> System.out.println("1. key: " + key + " value: " + value))
                 .to(topicResults);
 
@@ -60,42 +64,45 @@ public class KafkaStreams_ {
                 .count()
                 .toStream()
                 .peek((key, value) -> System.out.println("2. key: " + key + " value: " + value))
-                .to("topicResults");
+                .to(topicResults);
 
         // 3. Get minimum and maximum temperature per weather station.
-        lines_standard_weather.map((key, value) -> {
+        KTable<String, Double> Max_temperaturePerWs = lines_standard_weather.map((key, value) -> {
             Double temperature = getTemperature(value);
             return new KeyValue<>(key, temperature);
         })
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                .reduce((a, b) -> Double.compare(a, b) > 0 ? a : b)
-                .toStream()
+                .reduce((a, b) -> Double.compare(a, b) > 0 ? a : b);
+
+        Max_temperaturePerWs.toStream()
                 .peek((key, value) -> System.out.println("3. Max ==== WS: " + key + " maximum: " +
                         value))
-                .to("topicResults");
+                .to(topicResults);
 
-        lines_standard_weather.map((key, value) -> {
+        KTable<String, Double> Min_temperaturePerWs = lines_standard_weather.map((key, value) -> {
             Double temperature = getTemperature(value);
             return new KeyValue<>(key, temperature);
         })
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                .reduce((a, b) -> Double.compare(a, b) < 0 ? a : b)
-                .toStream()
+                .reduce((a, b) -> Double.compare(a, b) < 0 ? a : b);
+
+        Min_temperaturePerWs.toStream()
                 .peek((key, value) -> System.out.println("3. Min ==== WS: " + key + " minimum: " + value))
-                .to("topicResults");
+                .to(topicResults);
 
         // 4. Get minimum and maximum temperature per location (Students should compute
         // these values in Fahrenheit).
-        lines_standard_weather.map((key, value) -> {
+        KTable<String, Double> Max_temperaturePerL = lines_standard_weather.map((key, value) -> {
             String location = getLocation(value);
             Double temperature = getTemperature(value);
             return new KeyValue<>(location, temperature);
         })
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                .reduce((a, b) -> Double.compare(a, b) > 0 ? a : b)
-                .toStream()
+                .reduce((a, b) -> Double.compare(a, b) > 0 ? a : b);
+
+        Max_temperaturePerL.toStream()
                 .peek((key, value) -> System.out.println("4. Max ==== location: " + key + " maximum: " + value))
-                .to("topicResults");
+                .to(topicResults);
 
         lines_standard_weather.map((key, value) -> {
             String location = getLocation(value);
@@ -106,7 +113,7 @@ public class KafkaStreams_ {
                 .reduce((a, b) -> Double.compare(a, b) < 0 ? a : b)
                 .toStream()
                 .peek((key, value) -> System.out.println("4. Min ==== location: " + key + " minimum: " + value))
-                .to("topicResults");
+                .to(topicResults);
 
         // 5. Count the total number of alerts per weather station.
         lines_weather_alerts.groupByKey()
@@ -124,38 +131,59 @@ public class KafkaStreams_ {
                 .count()
                 .toStream()
                 .peek((key, value) -> System.out.println("6. key: " + key + " value: " + value))
-                .to("topicResults");
-
+                .to(topicResults);
         // 7. Get minimum temperature of weather stations with red alert events.
-        lines_weather_alerts.map((key, value) -> {
+        // lines_weather_alerts -> left stream Kstream
+        // Min_temperaturePerWs -> right stream Ktable
+        KStream<String, String> redAlertsPerWs = lines_weather_alerts.map((key, value) -> {
             String type = getType(value);
-            return new KeyValue<>(type, key);
-        }).
+            return new KeyValue<>(key, type);
+        }).filter((key, value) -> value.compareTo("red") == 0);
+
+        redAlertsPerWs.join(Min_temperaturePerWs,
+                (leftValue, rightValue) -> rightValue)
+                .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
+                .reduce((a, b) -> Double.compare(a, b) < 0 ? a : b)
+                .toStream()
+                .peek((key, value) -> System.out.println("7. key: " + key + " value: " + value))
+                .to(topicResults);
+
         // 8. Get maximum temperature of each location of alert events for the last hour
         // (students are allowed to define a different value for the time window).
+        // Max_temperaturePerL -> right
+        KStream<String, String> alertsPerL = lines_weather_alerts.map((key, value) -> {
+            String type = getType(value);
+            String location = getLocation(value);
+            return new KeyValue<>(location, type);
+        });
 
+        alertsPerL.join(Max_temperaturePerL, (recordA, recordB) -> {
+            return recordB;
+        }).groupByKey().windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofHours(1)));
         // 9. Get minimum temperature per weather station in red alert zones.
 
-        // 10. Get the average temperature per weather station.
-        KTable<String, Long> sum = lines_standard_weather.map((key, value) -> {
-                            Double temperature = getTemperature(value);
-                            return new KeyValue<>(key, temperature);
-                        })
-                        .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                        .count();
+        redAlertsPerWs.join(Min_temperaturePerWs,
+                (leftValue, rightValue) -> "Alert: " + leftValue + " - Minimum Temperature: " + rightValue)
+                .peek((key, value) -> System.out.println("9. key: " + key + " value: " + value))
+                .to(topicResults);
 
-                        
-        lines_standard_weather.map((key, value) -> {
+        // 10. Get the average temperature per weather station.
+        KTable<String, Double> sumTemperaturePerWs = lines_standard_weather.map((key, value) -> {
             Double temperature = getTemperature(value);
             return new KeyValue<>(key, temperature);
         })
                 .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                .reduce((a, b) -> a + b)
-                .toStream()
-                .peek((key, value) -> System.out.println("3. Max ==== WS: " + key + " maximum: " +
-                        value))
-                .to("topicResults");
+                .reduce((a, b) -> a + b);
 
+        lines_standard_weather.groupByKey()
+                .count()
+                .leftJoin(sumTemperaturePerWs, (left, right) -> {
+                    return Double.toString(right / left);
+                })
+                .toStream()
+                .peek((key, value) -> System.out.println("10. key: " + key + " value: " +
+                        value))
+                .to(topicResults);
 
         // 11. Get the average temperature of weather stations with red alert events for
         // the last hour
@@ -180,5 +208,9 @@ public class KafkaStreams_ {
         JSONObject toString = new JSONObject(jsonString);
 
         return toString.getString("type");
+    }
+
+    public static String average(Double d1, Double d2) {
+        return Double.toString(d1 / d2);
     }
 }
