@@ -1,0 +1,5 @@
+======================= topics: g  h
+======================= topics: g  h
+2. key: Leiria value: 2
+2. key: Coimbra value: 2
+2. key: Guarda value: 1

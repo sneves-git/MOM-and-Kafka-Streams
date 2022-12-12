@@ -1,0 +1,8 @@
+======================= topics: g  h
+======================= topics: g  h
+4. Min ==== location: Leiria minimum: 48.2
+4. Min ==== location: Coimbra minimum: 23.0
+4. Min ==== location: Guarda minimum: 91.4
+4. Max ==== location: Leiria maximum: 75.2
+4. Max ==== location: Coimbra maximum: 35.6
+4. Max ==== location: Guarda maximum: 91.4

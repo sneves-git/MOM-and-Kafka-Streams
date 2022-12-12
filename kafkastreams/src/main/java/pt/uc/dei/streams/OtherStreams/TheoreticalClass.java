@@ -55,7 +55,9 @@ public class TheoreticalClass {
 
                     return aggValue;
                 }, Materialized.with(Serdes.String(), new IntArraySerde()))
-                .mapValues(v -> v[0] != 0 ? "" + (1.0 * v[1]) / v[0] : "div by 0")
+                .mapValues(v -> {
+                        System.out.println(v);
+                        return v[0] != 0 ? "" + (1.0 * v[1]) / v[0] : "div by 0";})
                 .toStream()
                 .to(outtopicname + "-3", Produced.with(Serdes.String(), Serdes.String()));
 
