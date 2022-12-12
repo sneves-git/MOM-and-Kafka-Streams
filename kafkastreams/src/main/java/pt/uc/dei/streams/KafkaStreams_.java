@@ -49,7 +49,6 @@ public class KafkaStreams_ {
         KStream<String, String> lines_standard_weather = builder.stream(topicStandardWeather);
         KStream<String, String> lines_weather_alerts = builder.stream(topicWeatherAlerts);
         writeToFile("/workspace/kafkastreams/outputs/inputs.txt","======================= topics: "+ topicStandardWeather + "  " + topicWeatherAlerts);
-        writeToFile("/workspace/kafkastreams/outputs/ex1.txt",lines_standard_weather);
 
         lines_standard_weather
         .peek((key, value) -> writeToFile("/workspace/kafkastreams/outputs/ex1.txt","[lines_standard_weather] key: " + key + " value: " + value));

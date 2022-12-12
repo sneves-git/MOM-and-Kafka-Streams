@@ -1,6 +1,0 @@
-======================= topics: g  h
-======================= topics: g  h
-3. Max ==== WS: WS1 maximum: 75.2
-3. Max ==== WS: WS2 maximum: 91.4
-3. Min ==== WS: WS1 maximum: 23.0
-3. Min ==== WS: WS2 maximum: 91.4
