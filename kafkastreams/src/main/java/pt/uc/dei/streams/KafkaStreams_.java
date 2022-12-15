@@ -22,6 +22,8 @@ import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.kstream.ValueJoiner;
 import org.json.JSONObject;
 
+import pt.uc.dei.streams.OtherStreams.IntArraySerde;
+
 public class KafkaStreams_ {
 
     public static void main(String[] args) {
@@ -51,9 +53,9 @@ public class KafkaStreams_ {
         writeToFile("/workspace/kafkastreams/outputs/inputs.txt","======================= topics: "+ topicStandardWeather + "  " + topicWeatherAlerts);
 
         lines_standard_weather
-        .peek((key, value) -> writeToFile("/workspace/kafkastreams/outputs/ex1.txt","[lines_standard_weather] key: " + key + " value: " + value));
+        .peek((key, value) -> writeToFile("/workspace/kafkastreams/outputs/out.txt","[lines_standard_weather] key: " + key + " value: " + value));
         lines_weather_alerts
-        .peek((key, value) ->writeToFile("/workspace/kafkastreams/outputs/ex1.txt","[lines_weather_alerts] key: " + key + " value: " + value));
+        .peek((key, value) ->writeToFile("/workspace/kafkastreams/outputs/out.txt","[lines_weather_alerts] key: " + key + " value: " + value));
 
         lines_standard_weather
                 .peek((key, value) -> System.out.println("[lines_standard_weather] key: " + key + " value: " + value));
@@ -236,24 +238,24 @@ public class KafkaStreams_ {
         // 10. Get the average temperature per weather station.
         writeToFile("/workspace/kafkastreams/outputs/ex10.txt","======================= topics: "+ topicStandardWeather + "  " + topicWeatherAlerts);
 
-        KTable<String, Double> sumTemperaturePerWs = lines_standard_weather.map((key, value) -> {
-            Double temperature = getTemperature(value);
-            return new KeyValue<>(key, temperature);
-        })
-                .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                .reduce((a, b) -> a + b);
+        lines_standard_weather.map((key, value) -> {
+                String location = getLocation(value);
+                Double temperature = getTemperature(value);
+                return new KeyValue<>(location, temperature);
+            }).groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
+                .aggregate(() -> new int[] { 0, 0 }, (aggKey, newValue, aggValue) -> {
+                    aggValue[0] += 1;
+                    aggValue[1] += newValue;
 
-        lines_standard_weather.groupByKey()
-                .count()
-                .leftJoin(sumTemperaturePerWs, (left, right) -> {
-                    return Double.toString(right / left);
-                })
+                    return aggValue;
+                }, Materialized.with(Serdes.String(), new IntArraySerde()))
+                .mapValues(v -> {
+                        System.out.println(v);
+                        return v[0] != 0 ? "" + (1.0 * v[1]) / v[0] : "div by 0";})
                 .toStream()
-                .peek((key, value) -> {
-                        String output = "10. key: " + key + " value: " +value;
-                        writeToFile("/workspace/kafkastreams/outputs/ex10.txt", output);
-                        System.out.println(output);})
                 .to(topicResults);
+
+       
 
         // 11. Get the average temperature of weather stations with red alert events for
         // the last hour
