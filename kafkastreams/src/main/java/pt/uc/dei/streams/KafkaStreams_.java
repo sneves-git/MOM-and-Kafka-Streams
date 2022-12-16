@@ -42,7 +42,7 @@ public class KafkaStreams_ {
 
 
         java.util.Properties props = new Properties();
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-2");
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "kafka-streams-4");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "broker1:9092");
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
@@ -201,10 +201,35 @@ public class KafkaStreams_ {
             return new KeyValue<>(key, type);
         }).filter((key, value) -> value.compareTo("red") == 0);
 
-        redAlertsPerWs.join(Min_temperaturePerWs,
-                (leftValue, rightValue) -> rightValue)
-                .groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
-                .reduce((a, b) -> Double.compare(a, b) < 0 ? a : b)
+        KStream<String, String> temp = lines_standard_weather.map((key, value) -> {
+                Double tempDouble = getTemperature(value);
+                return new KeyValue<>(key, String.valueOf(tempDouble));
+        });
+        
+        ValueJoiner<String,String,String> valueJoiner = (leftValue, rightValue) -> {
+                return rightValue;
+                
+                };
+
+        redAlertsPerWs.join(temp,valueJoiner, JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofMinutes(1)))
+        .map((key, value) -> {
+                JSONObject joinedValue;
+                joinedValue = new JSONObject();
+                joinedValue.put("temperature", Double.valueOf(value));
+                joinedValue.put("WS",key );
+                return new KeyValue<>("1",joinedValue.toString() );
+                })
+                .peek((a,b)->{
+                        writeToFile("/workspace/kafkastreams/outputs/ex7.txt", "Key: "+ a + "  Value" + b);
+
+                })
+                .groupByKey(Grouped.with(Serdes.String(), Serdes.String()))
+                .reduce((v1, v2) -> {
+                        Double a = getTemperature(v1);
+                        Double b = getTemperature(v2);
+
+                        return Double.compare(a, b) < 0 ? v1 : v2; }
+                        )
                 .toStream()
                 .peek((key, value) -> {
                         String output = "7. key: " + key + " value: " + value;
@@ -239,9 +264,8 @@ public class KafkaStreams_ {
         writeToFile("/workspace/kafkastreams/outputs/ex10.txt","======================= topics: "+ topicStandardWeather + "  " + topicWeatherAlerts);
 
         lines_standard_weather.map((key, value) -> {
-                String location = getLocation(value);
                 Double temperature = getTemperature(value);
-                return new KeyValue<>(location, temperature);
+                return new KeyValue<>(key, temperature);
             }).groupByKey(Grouped.with(Serdes.String(), Serdes.Double()))
                 .aggregate(() -> new int[] { 0, 0 }, (aggKey, newValue, aggValue) -> {
                     aggValue[0] += 1;
@@ -251,6 +275,7 @@ public class KafkaStreams_ {
                 }, Materialized.with(Serdes.String(), new IntArraySerde()))
                 .mapValues(v -> {
                         System.out.println(v);
+                        writeToFile("/workspace/kafkastreams/outputs/ex10.txt","10. " + "count: " + v[0]+ "somatorio "+ v[1]);
                         return v[0] != 0 ? "" + (1.0 * v[1]) / v[0] : "div by 0";})
                 .toStream()
                 .to(topicResults);
@@ -269,6 +294,10 @@ public class KafkaStreams_ {
     public static String getLocation(String jsonString) {
         JSONObject toString = new JSONObject(jsonString);
         return toString.getString("location");
+    }
+    public static String getWS(String jsonString) {
+        JSONObject toString = new JSONObject(jsonString);
+        return toString.getString("WS");
     }
 
     public static Double getTemperature(String jsonString) {
